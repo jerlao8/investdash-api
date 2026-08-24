@@ -59,6 +59,10 @@ class UpdateUserRequest(BaseModel):
     is_active: bool | None = None
 
 
+class UpdatePasswordRequest(BaseModel):
+    new_password: str
+
+
 class LoginEventOut(BaseModel):
     id: int
     username: str

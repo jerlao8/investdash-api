@@ -144,6 +144,58 @@ def test_admin_route_forbidden_for_regular_user():
         _teardown(client)
 
 
+def test_admin_can_update_user_password():
+    client, _ = _make_client()
+    try:
+        headers = _admin_headers(client)
+        code_res = client.post("/api/admin/invite-codes", json={}, headers=headers)
+        code = code_res.json()["code"]
+        reg_res = client.post("/api/auth/register", json={"code": code, "username": "regular", "password": "old-password"})
+        user_id = reg_res.json()["user"]["id"]
+
+        update_res = client.patch(f"/api/admin/users/{user_id}/password", json={"new_password": "new-password-123"}, headers=headers)
+        assert update_res.status_code == 200
+
+        old_login = client.post("/api/auth/login", json={"username": "regular", "password": "old-password"})
+        assert old_login.status_code == 401
+
+        new_login = client.post("/api/auth/login", json={"username": "regular", "password": "new-password-123"})
+        assert new_login.status_code == 200
+    finally:
+        _teardown(client)
+
+
+def test_update_password_rejects_short_password():
+    client, _ = _make_client()
+    try:
+        headers = _admin_headers(client)
+        code_res = client.post("/api/admin/invite-codes", json={}, headers=headers)
+        code = code_res.json()["code"]
+        reg_res = client.post("/api/auth/register", json={"code": code, "username": "regular", "password": "old-password"})
+        user_id = reg_res.json()["user"]["id"]
+
+        res = client.patch(f"/api/admin/users/{user_id}/password", json={"new_password": "short"}, headers=headers)
+        assert res.status_code == 400
+    finally:
+        _teardown(client)
+
+
+def test_update_password_forbidden_for_regular_user():
+    client, _ = _make_client()
+    try:
+        headers = _admin_headers(client)
+        code_res = client.post("/api/admin/invite-codes", json={}, headers=headers)
+        code = code_res.json()["code"]
+        reg_res = client.post("/api/auth/register", json={"code": code, "username": "regular", "password": "old-password"})
+        user_id = reg_res.json()["user"]["id"]
+        user_headers = {"Authorization": f"Bearer {reg_res.json()['access_token']}"}
+
+        res = client.patch(f"/api/admin/users/{user_id}/password", json={"new_password": "new-password-123"}, headers=user_headers)
+        assert res.status_code == 403
+    finally:
+        _teardown(client)
+
+
 def test_register_defaults_to_english_unconfirmed():
     client, _ = _make_client()
     try:

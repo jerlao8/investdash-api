@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,13 +60,8 @@ _NEW_COLUMNS = [
 ]
 
 
-@app.on_event("startup")
-def on_startup() -> None:
-    global _scheduler
-    for table, column, ddl_type in _NEW_COLUMNS:
-        ensure_column(engine, table, column, ddl_type)
-    Base.metadata.create_all(bind=engine)
-
+def _run_startup_pipeline() -> None:
+    """Heavy ingest/score pass — keep off the request path so hosts can bind ports fast."""
     db = SessionLocal()
     try:
         result = run_full_pipeline(db)
@@ -75,6 +71,17 @@ def on_startup() -> None:
         db.rollback()
     finally:
         db.close()
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    global _scheduler
+    for table, column, ddl_type in _NEW_COLUMNS:
+        ensure_column(engine, table, column, ddl_type)
+    Base.metadata.create_all(bind=engine)
+
+    # Do not block uvicorn readiness / Render port detection on the full pipeline.
+    threading.Thread(target=_run_startup_pipeline, name="startup-pipeline", daemon=True).start()
 
     _scheduler = create_scheduler()
     _scheduler.start()

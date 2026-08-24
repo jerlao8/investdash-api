@@ -23,7 +23,9 @@ class Settings:
     data_source_mode: str = os.getenv("DATA_SOURCE_MODE", "mock")  # mock | live
     fred_api_key: str | None = os.getenv("FRED_API_KEY")
     sec_user_agent: str = os.getenv("SEC_USER_AGENT", "InvestDash research contact@example.com")
-    cors_origins: list[str] = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    cors_origins: list[str] = [
+        o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()
+    ]
     algorithm_version: str = "v1"
 
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "dev-insecure-change-me")

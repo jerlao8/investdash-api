@@ -9,7 +9,8 @@ from app.api.deps import get_current_user
 from app.db.models import InviteCode, LoginEvent, User
 from app.db.session import get_db
 from app.jobs.pipeline import run_full_pipeline
-from app.schemas.auth import CreateInviteCodeRequest, InviteCodeOut, LoginEventOut, UpdateUserRequest, UserOut
+from app.schemas.auth import CreateInviteCodeRequest, InviteCodeOut, LoginEventOut, UpdatePasswordRequest, UpdateUserRequest, UserOut
+from app.security import hash_password
 
 router = APIRouter()
 
@@ -65,6 +66,19 @@ def update_user(user_id: int, payload: UpdateUserRequest, db: Session = Depends(
 
     db.commit()
     return _user_out(user)
+
+
+@router.patch("/admin/users/{user_id}/password")
+def update_user_password(user_id: int, payload: UpdatePasswordRequest, db: Session = Depends(get_db)) -> dict:
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="password must be at least 8 characters")
+
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"updated": True}
 
 
 @router.delete("/admin/users/{user_id}")
