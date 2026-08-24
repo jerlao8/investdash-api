@@ -11,9 +11,8 @@ from app.api.routes import admin, auth, backtest, companies, favorites, feed, he
 from app.config import get_settings
 from app.db import models  # noqa: F401 - ensures all models are registered on Base.metadata
 from app.db.migrate import ensure_column
-from app.db.session import Base, SessionLocal, engine
-from app.jobs.pipeline import run_full_pipeline
-from app.jobs.scheduler import create_scheduler
+from app.db.session import Base, engine
+from app.jobs.scheduler import create_scheduler, run_catchup_if_needed
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("investdash")
@@ -60,17 +59,9 @@ _NEW_COLUMNS = [
 ]
 
 
-def _run_startup_pipeline() -> None:
-    """Heavy ingest/score pass — keep off the request path so hosts can bind ports fast."""
-    db = SessionLocal()
-    try:
-        result = run_full_pipeline(db)
-        logger.info("startup pipeline run: %s", result)
-    except Exception:  # noqa: BLE001
-        logger.exception("startup pipeline run failed")
-        db.rollback()
-    finally:
-        db.close()
+def _run_wake_catchup() -> None:
+    """If the host slept through a cron slot, run the pipeline once on wake."""
+    run_catchup_if_needed()
 
 
 @app.on_event("startup")
@@ -81,7 +72,7 @@ def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
 
     # Do not block uvicorn readiness / Render port detection on the full pipeline.
-    threading.Thread(target=_run_startup_pipeline, name="startup-pipeline", daemon=True).start()
+    threading.Thread(target=_run_wake_catchup, name="wake-catchup", daemon=True).start()
 
     _scheduler = create_scheduler()
     _scheduler.start()
