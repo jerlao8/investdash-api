@@ -140,6 +140,10 @@ class CrisisEventOut(BaseModel):
     recession_start: date | None
     recession_end: date | None
     description: str
+    # Applied U.S. Equity Health (current algorithm) reconstructed from observations as of
+    # event_start — i.e. crash/peak failure date — not a stored MarketSnapshot.
+    us_equity_score_at_start: float | None = None
+    overall_status_at_start: str | None = None
 
 
 class BacktestReconstruction(BaseModel):

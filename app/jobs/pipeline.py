@@ -7,6 +7,7 @@ POST /api/admin/recalculate endpoint (Section 46) - all three just call run_full
 from __future__ import annotations
 
 import secrets
+import threading
 from datetime import date, timedelta
 
 from sqlalchemy import func
@@ -44,6 +45,26 @@ from app.seed.sources import SOURCES
 
 # Section 39 freshness model (converted to days; "daily stale after 36h" ~= 1.5 days).
 FRESHNESS_DAYS = {"daily": 1.5, "weekly": 10, "monthly": 45, "quarterly": 120}
+
+
+def _business_day_gap(last_obs: date, today: date) -> float:
+    """Days between last_obs and today, not counting weekend days that fall in between.
+
+    Business-day (market-only) series like credit spreads or FX simply have no new print on
+    Sat/Sun - counting those closed days against the 1.5-day daily-freshness bar meant every
+    such indicator went stale every single weekend (and stayed that way into Monday/Tuesday)
+    even though nothing was actually wrong. Only "daily" frequency uses this - weekly/monthly/
+    quarterly already have generous multi-day buffers that comfortably absorb weekends.
+    """
+    if today <= last_obs:
+        return 0.0
+    weekend_days = 0
+    d = last_obs
+    while d < today:
+        d += timedelta(days=1)
+        if d.weekday() >= 5:  # Saturday=5, Sunday=6
+            weekend_days += 1
+    return (today - last_obs).days - weekend_days
 
 MOCK_PARAMS_BY_SLUG = {i["slug"]: MockParams(**i["mock"]) for i in INDICATORS}
 
@@ -227,7 +248,8 @@ def _score_indicator(db: Session, definition: IndicatorDefinition, latest_obs: I
     components = compute_components(definition.slug, current, values_5y, values_10y, values_full, definition.health_polarity)
 
     expected_gap = FRESHNESS_DAYS.get(definition.frequency, 3)
-    is_stale = (today - dates[-1]).days > expected_gap
+    actual_gap = _business_day_gap(dates[-1], today) if definition.frequency == "daily" else (today - dates[-1]).days
+    is_stale = actual_gap > expected_gap
 
     scored = ScoredIndicator(
         slug=definition.slug, cluster=definition.cluster, category=definition.category, components=components,
@@ -332,7 +354,22 @@ def compute_company_funding_scores(db: Session) -> None:
     db.flush()
 
 
+# run_full_pipeline is reachable from three independent, uncoordinated triggers - the startup
+# wake-catchup thread, each APScheduler cron job, and the admin "Recalculate" button - and every
+# call opens its own Session against the same database. Two runs overlapping (e.g. an admin
+# click landing during a scheduled/catch-up run) previously let one run's flush()-but-not-yet-
+# committed IndicatorObservation become visible mid-loop to the other, so an indicator's
+# IndicatorScore could end up pointing at a *different* indicator's observation_id entirely -
+# a real, confirmed corruption, not just a theoretical race. Serialize all runs through one lock.
+_pipeline_lock = threading.Lock()
+
+
 def run_full_pipeline(db: Session) -> dict:
+    with _pipeline_lock:
+        return _run_full_pipeline_locked(db)
+
+
+def _run_full_pipeline_locked(db: Session) -> dict:
     settings = get_settings()
     seed_and_sync(db)
 

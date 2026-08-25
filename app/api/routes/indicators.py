@@ -73,7 +73,10 @@ def _card(
         last_observation_date=obs.observation_date if obs else None,
         source_updated_today=_source_updated_today(obs),
         confidence=score.confidence if score else None,
-        is_stale=(score.color_state == "gray") if score else True,
+        # A score row can in principle outlive/mismatch the observation it was computed from
+        # (e.g. a corrupted or orphaned observation_id) - never show an indicator as "fresh"
+        # (a confident color/score) when there's no actual current observation behind it.
+        is_stale=True if obs is None or score is None else (score.color_state == "gray"),
         info_text=info_text, health_polarity=defn.health_polarity,
         reading_guide=reading_guide,
         extreme_kind=extreme_kind, extreme_since=LAST_RECESSION_START if extreme_kind else None, extreme_tone=extreme_tone,

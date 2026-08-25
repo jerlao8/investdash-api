@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 import threading
 
+from datetime import datetime, timezone
+
 from fastapi import Depends, FastAPI
+from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.deps import get_current_user, require_admin
@@ -13,6 +16,18 @@ from app.db import models  # noqa: F401 - ensures all models are registered on B
 from app.db.migrate import ensure_column
 from app.db.session import Base, engine
 from app.jobs.scheduler import create_scheduler, run_catchup_if_needed
+
+
+def _utc_iso(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.isoformat().replace("+00:00", "Z")
+
+
+# Naive DB datetimes are UTC — emit them with a Z so clients convert to local time correctly.
+ENCODERS_BY_TYPE[datetime] = _utc_iso
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("investdash")
