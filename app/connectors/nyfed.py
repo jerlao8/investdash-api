@@ -10,6 +10,7 @@ from datetime import date, timedelta
 
 from app.connectors.base import BaseConnector, Observation, RawObservation, http_get_with_retry, is_proxy_series
 from app.connectors.synthetic import MockParams, backfill_series
+from app.timeutil import today_pt
 
 NYFED_URL = "https://markets.newyorkfed.org/api/rates/secured/{rate_type}/search.json"
 
@@ -38,7 +39,7 @@ class NYFedConnector(BaseConnector):
         )
 
     def _fetch_live(self, series_identifier: str) -> RawObservation:
-        end = date.today()
+        end = today_pt()
         start = end - timedelta(days=365 * 3)  # NY Fed API history is more limited than FRED
         url = NYFED_URL.format(rate_type=series_identifier.lower())
         resp = http_get_with_retry(
@@ -54,7 +55,7 @@ class NYFedConnector(BaseConnector):
     def _fetch_mock(
         self, series_identifier: str, params: MockParams, years: int, frequency: str = "daily"
     ) -> RawObservation:
-        end = date.today()
+        end = today_pt()
         start = end - timedelta(days=365 * years)
         points = backfill_series(series_identifier, frequency, params, start, end)
         payload = {"refRates": [{"effectiveDate": d.isoformat(), "percentRate": v} for d, v in points]}

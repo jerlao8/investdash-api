@@ -11,6 +11,7 @@ from datetime import date, timedelta
 
 from app.connectors.base import BaseConnector, Observation, RawObservation, http_get_with_retry, is_proxy_series
 from app.connectors.synthetic import MockParams, backfill_series
+from app.timeutil import today_pt
 
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 
@@ -56,7 +57,7 @@ class FredConnector(BaseConnector):
     def _fetch_mock(
         self, series_identifier: str, params: MockParams, years: int, frequency: str = "daily"
     ) -> RawObservation:
-        end = date.today()
+        end = today_pt()
         start = end - timedelta(days=365 * years)
         points = backfill_series(series_identifier, frequency, params, start, end)
         payload = {

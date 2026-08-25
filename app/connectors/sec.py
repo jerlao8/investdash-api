@@ -15,6 +15,7 @@ from datetime import date, timedelta
 
 from app.connectors.base import BaseConnector, Observation, RawObservation, http_get_with_retry
 from app.connectors.synthetic import MockParams, backfill_series
+from app.timeutil import today_pt
 
 SEC_COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik10}.json"
 
@@ -53,7 +54,7 @@ class SecConnector(BaseConnector):
     def _fetch_mock(
         self, series_identifier: str, params: MockParams, years: int, frequency: str = "quarterly"
     ) -> RawObservation:
-        end = date.today()
+        end = today_pt()
         start = end - timedelta(days=365 * years)
         points = backfill_series(series_identifier, frequency, params, start, end)
         payload = {"observations": [{"date": d.isoformat(), "value": v} for d, v in points]}

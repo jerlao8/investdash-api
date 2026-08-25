@@ -24,6 +24,7 @@ from app.scoring.aggregate import (
 )
 from app.scoring.fear_greed import compute_fear_greed_index
 from app.scoring.health_score import compute_components
+from app.timeutil import today_pt
 
 HistoryById = dict[int, list[tuple[date, float]]]
 
@@ -146,7 +147,7 @@ def reconstruct_score_series(
 # Daily for the last 35 days (accurate week/month lookback + a usable sparkline), weekly out
 # to `days`, plus the exact quarter/year anchors guaranteed even if the weekly stride skips them.
 def _backfill_dates(days: int) -> list[date]:
-    today = date.today()
+    today = today_pt()
     dates: set[date] = set()
     for i in range(0, 36):
         dates.add(today - timedelta(days=i))

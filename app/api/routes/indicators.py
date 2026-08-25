@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -23,20 +22,18 @@ from app.db.session import get_db
 from app.schemas.responses import IndicatorCard, IndicatorDetail, IndicatorHistoryPoint
 from app.scoring.extremes import LAST_RECESSION_START, extreme_flag
 from app.scoring.health_score import reading_guide as _generic_reading_guide
+from app.timeutil import today_pt
 
 router = APIRouter()
 
 RANGE_DAYS = {"1M": 31, "3M": 92, "1Y": 366, "3Y": 1096, "5Y": 1827, "10Y": 3653}
-_PT = ZoneInfo("America/Los_Angeles")
 
 
 def _source_updated_today(obs: IndicatorObservation | None, now: datetime | None = None) -> bool:
     """True when the latest data point's as-of date is today (PT) — not when we last pulled."""
     if obs is None or obs.observation_date is None:
         return False
-    now = now or datetime.now(timezone.utc)
-    today_pt = now.astimezone(_PT).date()
-    return obs.observation_date == today_pt
+    return obs.observation_date == today_pt(now)
 
 
 def _card(
@@ -144,7 +141,7 @@ def get_indicator_history_batch(
     q = db.query(IndicatorObservation).filter(IndicatorObservation.indicator_id.in_(id_to_slug.keys()))
     if range != "Max":
         days = RANGE_DAYS.get(range, 92)
-        q = q.filter(IndicatorObservation.observation_date >= date.today() - timedelta(days=days))
+        q = q.filter(IndicatorObservation.observation_date >= today_pt() - timedelta(days=days))
     rows = q.order_by(IndicatorObservation.observation_date.asc()).all()
 
     out: dict[str, list[IndicatorHistoryPoint]] = {slug: [] for slug in id_to_slug.values()}
@@ -174,7 +171,7 @@ def get_indicator(
     q = db.query(IndicatorObservation).filter(IndicatorObservation.indicator_id == defn.id)
     if range != "Max":
         days = RANGE_DAYS.get(range, 366)
-        q = q.filter(IndicatorObservation.observation_date >= date.today() - timedelta(days=days))
+        q = q.filter(IndicatorObservation.observation_date >= today_pt() - timedelta(days=days))
     rows = q.order_by(IndicatorObservation.observation_date.asc()).all()
 
     history = [IndicatorHistoryPoint(date=r.observation_date, value=r.value) for r in rows]

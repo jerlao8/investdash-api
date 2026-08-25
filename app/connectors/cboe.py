@@ -12,6 +12,7 @@ from datetime import date, timedelta
 
 from app.connectors.base import BaseConnector, Observation, RawObservation, http_get_with_retry, is_proxy_series
 from app.connectors.synthetic import MockParams, backfill_series
+from app.timeutil import today_pt
 
 CBOE_CSV_URL = "https://cdn.cboe.com/api/global/us_indices/daily_prices/{index}_History.csv"
 
@@ -52,7 +53,7 @@ class CboeConnector(BaseConnector):
     def _fetch_mock(
         self, series_identifier: str, params: MockParams, years: int, frequency: str = "daily"
     ) -> RawObservation:
-        end = date.today()
+        end = today_pt()
         start = end - timedelta(days=365 * years)
         points = backfill_series(series_identifier, frequency, params, start, end)
         payload = {"observations": [{"date": d.isoformat(), "value": v} for d, v in points]}
@@ -65,6 +66,15 @@ class CboeConnector(BaseConnector):
             for row in reader:
                 d_str = row.get("DATE") or row.get("Date")
                 v_str = row.get("CLOSE") or row.get("Close")
+                if v_str is None:
+                    # Single-value index CSVs (e.g. VVIX, SKEW: "DATE,VVIX") use the series
+                    # name itself as the value column header instead of CLOSE, unlike the
+                    # OHLC series (VIX, VIX9D: "DATE,OPEN,HIGH,LOW,CLOSE") - fall back to
+                    # whichever column isn't the date.
+                    for key, val in row.items():
+                        if key and key.strip().upper() != "DATE":
+                            v_str = val
+                            break
                 if not d_str or not v_str:
                     continue
                 try:

@@ -42,9 +42,10 @@ from app.seed.events import CRISIS_EVENTS
 from app.seed.indicators import INDICATORS
 from app.seed.indicators_zh import TRANSLATIONS as INDICATOR_TRANSLATIONS
 from app.seed.sources import SOURCES
+from app.timeutil import today_pt
 
 # Section 39 freshness model (converted to days; "daily stale after 36h" ~= 1.5 days).
-FRESHNESS_DAYS = {"daily": 1.5, "weekly": 10, "monthly": 45, "quarterly": 120}
+FRESHNESS_DAYS = {"daily": 1.5, "weekly": 10, "monthly": 45, "quarterly": 120, "annual": 500}
 
 
 def _business_day_gap(last_obs: date, today: date) -> float:
@@ -124,7 +125,7 @@ def seed_and_sync(db: Session) -> None:
     _sync_indicator_definitions(db, source_id_by_key)
 
     if db.query(Company).count() == 0:
-        period_end = date.today().replace(day=1) - timedelta(days=1)  # end of last month, proxy quarter-end
+        period_end = today_pt().replace(day=1) - timedelta(days=1)  # end of last month, proxy quarter-end
         for c in COMPANIES:
             company = Company(name=c["name"], ticker=c["ticker"], cik=c["cik"], sector=c["sector"], subsector=c["subsector"], tier=c["tier"], active=True)
             db.add(company)
@@ -227,7 +228,7 @@ def _ingest_indicator(db: Session, definition: IndicatorDefinition) -> Indicator
 
 
 def _score_indicator(db: Session, definition: IndicatorDefinition, latest_obs: IndicatorObservation) -> tuple[ScoredIndicator, ObservationContext] | None:
-    today = date.today()
+    today = today_pt()
     rows = (
         db.query(IndicatorObservation.observation_date, IndicatorObservation.value)
         .filter(IndicatorObservation.indicator_id == definition.id)
@@ -282,7 +283,7 @@ def compute_company_funding_scores(db: Session) -> None:
     maturity coverage, and expansion funding gap - converted into 0-10 sub-scores and an
     equal-weighted overall across all six."""
     companies = db.query(Company).filter(Company.active == True).all()  # noqa: E712
-    today = date.today()
+    today = today_pt()
     db.query(CompanyFundingScore).filter(CompanyFundingScore.date == today).delete()
 
     for c in companies:
@@ -407,7 +408,7 @@ def _run_full_pipeline_locked(db: Session) -> dict:
     scored_by_slug = {s.slug: s for s in scored_list}
     fear_greed = compute_fear_greed_index(scored_by_slug)
 
-    today = date.today()
+    today = today_pt()
     db.query(MarketSnapshot).filter(MarketSnapshot.snapshot_date == today).delete()
     db.add(
         MarketSnapshot(

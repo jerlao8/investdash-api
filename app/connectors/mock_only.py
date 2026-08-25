@@ -12,6 +12,7 @@ from datetime import date, timedelta
 
 from app.connectors.base import BaseConnector, Observation, RawObservation
 from app.connectors.synthetic import MockParams, backfill_series
+from app.timeutil import today_pt
 
 
 class MockOnlyConnector(BaseConnector):
@@ -24,7 +25,7 @@ class MockOnlyConnector(BaseConnector):
         years: int = 12,
         frequency: str = "monthly",
     ) -> RawObservation:
-        end = date.today()
+        end = today_pt()
         start = end - timedelta(days=365 * years)
         params = mock_params or MockParams(base=1.0, vol=0.05)
         points = backfill_series(series_identifier, frequency, params, start, end)

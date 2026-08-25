@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -9,6 +9,7 @@ from app.api.deps import get_lang
 from app.db.models import AlertEvent, FeedItem
 from app.db.session import get_db
 from app.schemas.responses import FeedItemOut
+from app.timeutil import today_pt
 
 router = APIRouter()
 
@@ -21,7 +22,7 @@ def get_feed(
     category: str | None = None,
     limit: int = Query(100, ge=1, le=500),
 ) -> list[FeedItemOut]:
-    cutoff = date.today() - timedelta(days=days)
+    cutoff = today_pt() - timedelta(days=days)
     q = db.query(FeedItem).filter(FeedItem.date >= cutoff)
     if category:
         q = q.filter(FeedItem.category == category)

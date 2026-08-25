@@ -14,6 +14,7 @@ from datetime import date, timedelta
 
 from app.connectors.base import BaseConnector, Observation, RawObservation, http_get_with_retry, is_proxy_series
 from app.connectors.synthetic import MockParams, backfill_series
+from app.timeutil import today_pt
 
 TREASURY_CSV_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
@@ -45,9 +46,10 @@ class TreasuryConnector(BaseConnector):
         )
 
     def _fetch_live(self, series_identifier: str) -> RawObservation:
-        url = TREASURY_CSV_URL.format(year=date.today().year)
+        year = today_pt().year
+        url = TREASURY_CSV_URL.format(year=year)
         resp = http_get_with_retry(
-            url, params={"type": "daily_treasury_yield_curve", "field_tdr_date_value": date.today().year, "page": "", "_format": "csv"}
+            url, params={"type": "daily_treasury_yield_curve", "field_tdr_date_value": year, "page": "", "_format": "csv"}
         )
         self._last_error = None
         return RawObservation(
@@ -59,7 +61,7 @@ class TreasuryConnector(BaseConnector):
     def _fetch_mock(
         self, series_identifier: str, params: MockParams, years: int, frequency: str = "daily"
     ) -> RawObservation:
-        end = date.today()
+        end = today_pt()
         start = end - timedelta(days=365 * years)
         points = backfill_series(series_identifier, frequency, params, start, end)
         payload = {"observations": [{"date": d.isoformat(), "value": v} for d, v in points]}
