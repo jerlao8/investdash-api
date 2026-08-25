@@ -45,6 +45,7 @@ _scheduler = None
 _NEW_COLUMNS = [
     ("users", "language", "VARCHAR(10) DEFAULT 'en'"),
     ("users", "language_confirmed", "BOOLEAN DEFAULT FALSE"),
+    ("users", "collapsed_sections", "TEXT DEFAULT '[]'"),
     ("indicator_definitions", "name_zh", "VARCHAR(200) DEFAULT ''"),
     ("indicator_definitions", "info_text_zh", "TEXT DEFAULT ''"),
     ("indicator_definitions", "reading_guide_zh", "TEXT DEFAULT ''"),

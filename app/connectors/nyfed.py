@@ -19,14 +19,23 @@ class NYFedConnector(BaseConnector):
     fixture_dir = "nyfed"
 
     def fetch(
-        self, series_identifier: str, mock_params: MockParams | None = None, years: int = 12
+        self,
+        series_identifier: str,
+        mock_params: MockParams | None = None,
+        years: int = 12,
+        frequency: str = "daily",
     ) -> RawObservation:
         if self.mode == "live" and not is_proxy_series(series_identifier):
             try:
                 return self._fetch_live(series_identifier)
             except Exception as exc:  # noqa: BLE001
                 self._last_error = f"live fetch failed for {series_identifier}: {exc}"
-        return self._fetch_mock(series_identifier, mock_params or MockParams(base=5.0, vol=0.03), years)
+        return self._fetch_mock(
+            series_identifier,
+            mock_params or MockParams(base=5.0, vol=0.03),
+            years,
+            frequency=frequency,
+        )
 
     def _fetch_live(self, series_identifier: str) -> RawObservation:
         end = date.today()
@@ -42,10 +51,12 @@ class NYFedConnector(BaseConnector):
             source_url="https://markets.newyorkfed.org/",
         )
 
-    def _fetch_mock(self, series_identifier: str, params: MockParams, years: int) -> RawObservation:
+    def _fetch_mock(
+        self, series_identifier: str, params: MockParams, years: int, frequency: str = "daily"
+    ) -> RawObservation:
         end = date.today()
         start = end - timedelta(days=365 * years)
-        points = backfill_series(series_identifier, "daily", params, start, end)
+        points = backfill_series(series_identifier, frequency, params, start, end)
         payload = {"refRates": [{"effectiveDate": d.isoformat(), "percentRate": v} for d, v in points]}
         return RawObservation(
             series_identifier=series_identifier,

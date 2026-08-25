@@ -17,6 +17,14 @@ from datetime import date, timedelta
 FREQ_STEP_DAYS = {"daily": 1, "weekly": 7, "monthly": 30, "quarterly": 91}
 
 
+def normalize_frequency(frequency: str | None) -> str:
+    """Map indicator frequency labels onto the synthetic generator's supported steps."""
+    if not frequency:
+        return "daily"
+    key = frequency.strip().lower()
+    return key if key in FREQ_STEP_DAYS else "daily"
+
+
 @dataclass
 class MockParams:
     base: float
@@ -45,7 +53,8 @@ def backfill_series(
     slug: str, frequency: str, params: MockParams, start: date, end: date
 ) -> list[tuple[date, float]]:
     rng = random.Random(_seed_for(slug))
-    step_days = FREQ_STEP_DAYS.get(frequency, 1)
+    freq = normalize_frequency(frequency)
+    step_days = FREQ_STEP_DAYS[freq]
     points: list[tuple[date, float]] = []
     value = params.base
     d = start

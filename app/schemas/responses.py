@@ -57,6 +57,7 @@ class IndicatorCard(BaseModel):
     change_5d: float | None
     change_1m: float | None
     last_observation_date: date | None
+    source_updated_today: bool = False
     confidence: float | None
     is_stale: bool
     info_text: str

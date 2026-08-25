@@ -167,8 +167,17 @@ def indicator_alert_level(scored: ScoredIndicator) -> str:
 
 
 def detect_emergency(scored: list[ScoredIndicator]) -> tuple[bool, list[str]]:
-    """Section 31 Level 4: >=3 independent clusters deteriorating, with at least one
-    Credit/Funding-or-Liquidity cluster and at least one Equity Internals/Volatility cluster."""
+    """Section 31 Level 4: >=4 independent clusters deteriorating, with at least one
+    Credit/Funding-or-Liquidity cluster and at least one Equity Internals/Volatility cluster.
+
+    Raised from the original >=3-clusters/50%-of-members-yellow-or-worse bar, which fired too
+    readily on ordinary cross-market noise: "yellow" alone covers roughly the middle half of the
+    health-score range, and velocity < 50 just means "slower than this indicator's own historical
+    median pace" - both are common, unremarkable conditions individually. A cluster now only
+    counts as deteriorating if a clear majority of its members are genuinely red, or yellow with
+    clearly accelerating (not merely below-median) downward momentum, and the aggregate now needs
+    one more independent cluster corroborating that before it counts as an emergency.
+    """
     by_cluster: dict[str, list[ScoredIndicator]] = defaultdict(list)
     for s in scored:
         by_cluster[s.cluster].append(s)
@@ -178,13 +187,13 @@ def detect_emergency(scored: list[ScoredIndicator]) -> tuple[bool, list[str]]:
         non_stale = [m for m in members if not m.is_stale]
         if not non_stale:
             continue
-        bad = [m for m in non_stale if m.color in ("yellow", "red") and m.components.velocity < 50]
-        if len(bad) / len(non_stale) >= 0.5:
+        bad = [m for m in non_stale if m.color == "red" or (m.color == "yellow" and m.components.velocity < 35)]
+        if len(bad) / len(non_stale) >= 0.6:
             deteriorating.append(cluster)
 
     has_credit_liq = any(c in CREDIT_LIQUIDITY_CLUSTERS for c in deteriorating)
     has_equity_vol = any(c in EQUITY_VOL_CLUSTERS for c in deteriorating)
-    is_emergency = len(deteriorating) >= 3 and has_credit_liq and has_equity_vol
+    is_emergency = len(deteriorating) >= 4 and has_credit_liq and has_equity_vol
     return is_emergency, deteriorating
 
 

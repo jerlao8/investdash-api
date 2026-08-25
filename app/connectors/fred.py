@@ -20,14 +20,23 @@ class FredConnector(BaseConnector):
     fixture_dir = "fred"
 
     def fetch(
-        self, series_identifier: str, mock_params: MockParams | None = None, years: int = 12
+        self,
+        series_identifier: str,
+        mock_params: MockParams | None = None,
+        years: int = 12,
+        frequency: str = "daily",
     ) -> RawObservation:
         if self.mode == "live" and self.settings.fred_api_key and not is_proxy_series(series_identifier):
             try:
                 return self._fetch_live(series_identifier)
             except Exception as exc:  # noqa: BLE001
                 self._last_error = f"live fetch failed for {series_identifier}: {exc}"
-        return self._fetch_mock(series_identifier, mock_params or MockParams(base=1.0, vol=0.05), years)
+        return self._fetch_mock(
+            series_identifier,
+            mock_params or MockParams(base=1.0, vol=0.05),
+            years,
+            frequency=frequency,
+        )
 
     def _fetch_live(self, series_identifier: str) -> RawObservation:
         params = {
@@ -44,10 +53,12 @@ class FredConnector(BaseConnector):
             source_url=f"https://fred.stlouisfed.org/series/{series_identifier}",
         )
 
-    def _fetch_mock(self, series_identifier: str, params: MockParams, years: int) -> RawObservation:
+    def _fetch_mock(
+        self, series_identifier: str, params: MockParams, years: int, frequency: str = "daily"
+    ) -> RawObservation:
         end = date.today()
         start = end - timedelta(days=365 * years)
-        points = backfill_series(series_identifier, "daily", params, start, end)
+        points = backfill_series(series_identifier, frequency, params, start, end)
         payload = {
             "observations": [
                 {"date": d.isoformat(), "value": str(v)} for d, v in points

@@ -26,14 +26,23 @@ class TreasuryConnector(BaseConnector):
     fixture_dir = "treasury"
 
     def fetch(
-        self, series_identifier: str, mock_params: MockParams | None = None, years: int = 12
+        self,
+        series_identifier: str,
+        mock_params: MockParams | None = None,
+        years: int = 12,
+        frequency: str = "daily",
     ) -> RawObservation:
         if self.mode == "live" and not is_proxy_series(series_identifier):
             try:
                 return self._fetch_live(series_identifier)
             except Exception as exc:  # noqa: BLE001
                 self._last_error = f"live fetch failed for {series_identifier}: {exc}"
-        return self._fetch_mock(series_identifier, mock_params or MockParams(base=4.0, vol=0.04), years)
+        return self._fetch_mock(
+            series_identifier,
+            mock_params or MockParams(base=4.0, vol=0.04),
+            years,
+            frequency=frequency,
+        )
 
     def _fetch_live(self, series_identifier: str) -> RawObservation:
         url = TREASURY_CSV_URL.format(year=date.today().year)
@@ -47,10 +56,12 @@ class TreasuryConnector(BaseConnector):
             source_url="https://home.treasury.gov/resource-center/data-chart-center/interest-rates/",
         )
 
-    def _fetch_mock(self, series_identifier: str, params: MockParams, years: int) -> RawObservation:
+    def _fetch_mock(
+        self, series_identifier: str, params: MockParams, years: int, frequency: str = "daily"
+    ) -> RawObservation:
         end = date.today()
         start = end - timedelta(days=365 * years)
-        points = backfill_series(series_identifier, "daily", params, start, end)
+        points = backfill_series(series_identifier, frequency, params, start, end)
         payload = {"observations": [{"date": d.isoformat(), "value": v} for d, v in points]}
         return RawObservation(
             series_identifier=series_identifier,

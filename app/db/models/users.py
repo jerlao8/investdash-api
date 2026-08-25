@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -21,6 +21,7 @@ class User(Base):
     login_count: Mapped[int] = mapped_column(Integer, default=0)
     language: Mapped[str] = mapped_column(String(10), default="en")  # en|zh
     language_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    collapsed_sections: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of section ids
 
 
 class InviteCode(Base):

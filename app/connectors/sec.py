@@ -28,9 +28,20 @@ class SecConnector(BaseConnector):
     name = "SEC EDGAR"
     fixture_dir = "sec"
 
-    def fetch(self, series_identifier: str, mock_params: MockParams | None = None, years: int = 12) -> RawObservation:
+    def fetch(
+        self,
+        series_identifier: str,
+        mock_params: MockParams | None = None,
+        years: int = 12,
+        frequency: str = "quarterly",
+    ) -> RawObservation:
         if ":" not in series_identifier:
-            return self._fetch_mock(series_identifier, mock_params or MockParams(base=10.0, vol=1.0), years)
+            return self._fetch_mock(
+                series_identifier,
+                mock_params or MockParams(base=10.0, vol=1.0),
+                years,
+                frequency=frequency,
+            )
         cik10, tag = series_identifier.split(":", 1)
         if self.mode == "live":
             try:
@@ -39,10 +50,12 @@ class SecConnector(BaseConnector):
                 self._last_error = f"live fetch failed for {series_identifier}: {exc}"
         return RawObservation(series_identifier=series_identifier, payload={}, source_url="")
 
-    def _fetch_mock(self, series_identifier: str, params: MockParams, years: int) -> RawObservation:
+    def _fetch_mock(
+        self, series_identifier: str, params: MockParams, years: int, frequency: str = "quarterly"
+    ) -> RawObservation:
         end = date.today()
         start = end - timedelta(days=365 * years)
-        points = backfill_series(series_identifier, "quarterly", params, start, end)
+        points = backfill_series(series_identifier, frequency, params, start, end)
         payload = {"observations": [{"date": d.isoformat(), "value": v} for d, v in points]}
         return RawObservation(series_identifier=series_identifier, payload=payload, source_url="https://www.sec.gov/")
 

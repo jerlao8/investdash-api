@@ -111,6 +111,33 @@ def test_register_with_revoked_code_fails():
         _teardown(client)
 
 
+def test_validate_code_accepts_unused_code_without_consuming_it():
+    client, _ = _make_client()
+    try:
+        headers = _admin_headers(client)
+        code_res = client.post("/api/admin/invite-codes", json={}, headers=headers)
+        code = code_res.json()["code"]
+
+        validate_res = client.post("/api/auth/validate-code", json={"code": code})
+        assert validate_res.status_code == 200
+        assert validate_res.json() == {"valid": True}
+
+        # still unused - a real registration should still succeed afterward
+        reg_res = client.post("/api/auth/register", json={"code": code, "username": "frank", "password": "frank-password"})
+        assert reg_res.status_code == 200
+    finally:
+        _teardown(client)
+
+
+def test_validate_code_rejects_unknown_code():
+    client, _ = _make_client()
+    try:
+        res = client.post("/api/auth/validate-code", json={"code": "NOPE1234"})
+        assert res.status_code == 400
+    finally:
+        _teardown(client)
+
+
 def test_login_with_wrong_password_fails():
     client, _ = _make_client()
     try:
@@ -232,5 +259,22 @@ def test_set_language_rejects_unknown_language():
         headers = _admin_headers(client)
         res = client.patch("/api/auth/language", json={"language": "fr"}, headers=headers)
         assert res.status_code == 400
+    finally:
+        _teardown(client)
+
+
+def test_collapsed_sections_default_empty_and_persists():
+    client, _ = _make_client()
+    try:
+        headers = _admin_headers(client)
+        me_res = client.get("/api/auth/me", headers=headers)
+        assert me_res.json()["collapsed_sections"] == []
+
+        set_res = client.patch("/api/auth/collapsed-sections", json={"collapsed_sections": ["macro", "global"]}, headers=headers)
+        assert set_res.status_code == 200
+        assert set_res.json()["collapsed_sections"] == ["macro", "global"]
+
+        me_res2 = client.get("/api/auth/me", headers=headers)
+        assert me_res2.json()["collapsed_sections"] == ["macro", "global"]
     finally:
         _teardown(client)

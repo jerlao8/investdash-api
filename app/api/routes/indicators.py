@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -26,6 +27,16 @@ from app.scoring.health_score import reading_guide as _generic_reading_guide
 router = APIRouter()
 
 RANGE_DAYS = {"1M": 31, "3M": 92, "1Y": 366, "3Y": 1096, "5Y": 1827, "10Y": 3653}
+_PT = ZoneInfo("America/Los_Angeles")
+
+
+def _source_updated_today(obs: IndicatorObservation | None, now: datetime | None = None) -> bool:
+    """True when the latest data point's as-of date is today (PT) — not when we last pulled."""
+    if obs is None or obs.observation_date is None:
+        return False
+    now = now or datetime.now(timezone.utc)
+    today_pt = now.astimezone(_PT).date()
+    return obs.observation_date == today_pt
 
 
 def _card(
@@ -60,6 +71,7 @@ def _card(
         health_score=score.health_score_0_100 if score else None,
         change_1d=change_1d, change_5d=change_5d, change_1m=change_1m,
         last_observation_date=obs.observation_date if obs else None,
+        source_updated_today=_source_updated_today(obs),
         confidence=score.confidence if score else None,
         is_stale=(score.color_state == "gray") if score else True,
         info_text=info_text, health_polarity=defn.health_polarity,

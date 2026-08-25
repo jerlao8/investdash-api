@@ -174,7 +174,12 @@ def _ingest_indicator(db: Session, definition: IndicatorDefinition) -> Indicator
     connector = get_connector(definition.connector_key)
     mock_params = MOCK_PARAMS_BY_SLUG.get(definition.slug)
     try:
-        raw = connector.fetch(definition.series_identifier, mock_params=mock_params, years=12)
+        raw = connector.fetch(
+            definition.series_identifier,
+            mock_params=mock_params,
+            years=12,
+            frequency=definition.frequency,
+        )
         observations = connector.normalize(raw)
     except Exception:  # noqa: BLE001 - a single bad indicator should never abort the whole pipeline
         return db.query(IndicatorObservation).filter(IndicatorObservation.indicator_id == definition.id).order_by(IndicatorObservation.observation_date.desc()).first()

@@ -17,11 +17,17 @@ from app.connectors.synthetic import MockParams, backfill_series
 class MockOnlyConnector(BaseConnector):
     base_url: str = ""
 
-    def fetch(self, series_identifier: str, mock_params: MockParams | None = None, years: int = 12) -> RawObservation:
+    def fetch(
+        self,
+        series_identifier: str,
+        mock_params: MockParams | None = None,
+        years: int = 12,
+        frequency: str = "monthly",
+    ) -> RawObservation:
         end = date.today()
         start = end - timedelta(days=365 * years)
         params = mock_params or MockParams(base=1.0, vol=0.05)
-        points = backfill_series(series_identifier, "monthly", params, start, end)
+        points = backfill_series(series_identifier, frequency, params, start, end)
         payload = {"observations": [{"date": d.isoformat(), "value": v} for d, v in points]}
         self._last_error = "mock-only connector: no live integration implemented yet"
         return RawObservation(series_identifier=series_identifier, payload=payload, source_url=self.base_url)

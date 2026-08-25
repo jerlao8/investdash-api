@@ -28,11 +28,12 @@ def test_indicator_alert_level_info_when_healthy():
 
 
 def test_detect_emergency_requires_credit_and_equity_vol_clusters():
-    # Three deteriorating clusters, but none in credit/liquidity/banking -> no emergency.
+    # Four deteriorating clusters, but none in credit/liquidity/banking -> no emergency.
     scored = (
         [_sc(f"g{i}", "growth", level=20, velocity=20) for i in range(2)]
         + [_sc(f"l{i}", "labor", level=20, velocity=20) for i in range(2)]
         + [_sc(f"i{i}", "inflation", level=20, velocity=20) for i in range(2)]
+        + [_sc(f"r{i}", "rates", level=20, velocity=20) for i in range(2)]
     )
     is_emergency, clusters = detect_emergency(scored)
     assert is_emergency is False
@@ -43,6 +44,7 @@ def test_detect_emergency_fires_with_credit_liquidity_and_equity_vol():
         [_sc(f"c{i}", "credit", level=15, velocity=20) for i in range(2)]
         + [_sc(f"l{i}", "liquidity", level=15, velocity=20) for i in range(2)]
         + [_sc(f"v{i}", "volatility_options", level=15, velocity=20) for i in range(2)]
+        + [_sc(f"b{i}", "banking", level=15, velocity=20) for i in range(2)]
     )
     is_emergency, clusters = detect_emergency(scored)
     assert is_emergency is True
@@ -51,5 +53,29 @@ def test_detect_emergency_fires_with_credit_liquidity_and_equity_vol():
 
 def test_detect_emergency_false_when_clusters_healthy():
     scored = [_sc(f"c{i}", "credit", level=90, velocity=80) for i in range(3)]
+    is_emergency, _ = detect_emergency(scored)
+    assert is_emergency is False
+
+
+def test_detect_emergency_no_longer_fires_on_three_clusters_of_mild_yellow():
+    # This is exactly the scenario the old >=3-clusters/50%-yellow-or-worse bar would have
+    # fired on: three clusters, each just barely a majority yellow with below-median (but not
+    # accelerating) velocity - ordinary cross-market noise, not a corroborated crisis signal.
+    scored = (
+        [_sc(f"c{i}", "credit", level=55, velocity=45, color="yellow") for i in range(2)]
+        + [_sc(f"l{i}", "liquidity", level=55, velocity=45, color="yellow") for i in range(2)]
+        + [_sc(f"v{i}", "volatility_options", level=55, velocity=45, color="yellow") for i in range(2)]
+    )
+    is_emergency, _ = detect_emergency(scored)
+    assert is_emergency is False
+
+
+def test_detect_emergency_requires_four_clusters_now():
+    # Three clearly red, corroborating clusters used to be enough - now it isn't.
+    scored = (
+        [_sc(f"c{i}", "credit", level=15, velocity=20) for i in range(2)]
+        + [_sc(f"l{i}", "liquidity", level=15, velocity=20) for i in range(2)]
+        + [_sc(f"v{i}", "volatility_options", level=15, velocity=20) for i in range(2)]
+    )
     is_emergency, _ = detect_emergency(scored)
     assert is_emergency is False

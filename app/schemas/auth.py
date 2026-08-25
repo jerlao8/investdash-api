@@ -11,6 +11,10 @@ class RegisterRequest(BaseModel):
     password: str
 
 
+class ValidateCodeRequest(BaseModel):
+    code: str
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -27,6 +31,7 @@ class UserOut(BaseModel):
     login_count: int
     language: str
     language_confirmed: bool
+    collapsed_sections: list[str] = []
 
 
 class TokenResponse(BaseModel):
@@ -37,6 +42,10 @@ class TokenResponse(BaseModel):
 
 class SetLanguageRequest(BaseModel):
     language: str
+
+
+class SetCollapsedSectionsRequest(BaseModel):
+    collapsed_sections: list[str]
 
 
 class InviteCodeOut(BaseModel):
