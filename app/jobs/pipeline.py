@@ -218,20 +218,43 @@ def _ingest_indicator(db: Session, definition: IndicatorDefinition) -> Indicator
     if not observations:
         return db.query(IndicatorObservation).filter(IndicatorObservation.indicator_id == definition.id).order_by(IndicatorObservation.observation_date.desc()).first()
 
-    existing_dates = {
-        d for (d,) in db.query(IndicatorObservation.observation_date).filter(IndicatorObservation.indicator_id == definition.id).all()
+    existing_by_date = {
+        row.observation_date: row
+        for row in db.query(IndicatorObservation).filter(IndicatorObservation.indicator_id == definition.id).all()
     }
     payload_hash = raw_payload_hash(raw.payload) if raw.payload else ""
+    fresh_dates = {obs.observation_date for obs in observations}
+
+    # Mock regenerates the full grid each run. Drop off-grid dates left by older generators
+    # (e.g. daily-spaced points on monthly series from the sliding-window bug). Never do this
+    # in live mode — a partial upstream response must not wipe real history.
+    if get_settings().data_source_mode == "mock":
+        stale_ids = [row.id for obs_date, row in existing_by_date.items() if obs_date not in fresh_dates]
+        if stale_ids:
+            db.query(IndicatorScore).filter(IndicatorScore.observation_id.in_(stale_ids)).delete(synchronize_session=False)
+            for obs_date, row in list(existing_by_date.items()):
+                if obs_date not in fresh_dates:
+                    db.delete(row)
+                    existing_by_date.pop(obs_date, None)
+
     for obs in sorted(observations, key=lambda o: o.observation_date):
-        if obs.observation_date in existing_dates:
-            continue
-        db.add(
-            IndicatorObservation(
-                indicator_id=definition.id, observation_date=obs.observation_date, value=obs.value,
-                source_url=obs.source_url or definition.source_url, raw_payload_hash=payload_hash,
-                is_preliminary=obs.is_preliminary,
+        row = existing_by_date.get(obs.observation_date)
+        if row is None:
+            db.add(
+                IndicatorObservation(
+                    indicator_id=definition.id,
+                    observation_date=obs.observation_date,
+                    value=obs.value,
+                    source_url=obs.source_url or definition.source_url,
+                    raw_payload_hash=payload_hash,
+                    is_preliminary=obs.is_preliminary,
+                )
             )
-        )
+        elif row.value != obs.value or row.raw_payload_hash != payload_hash:
+            row.value = obs.value
+            row.source_url = obs.source_url or definition.source_url
+            row.raw_payload_hash = payload_hash
+            row.is_preliminary = obs.is_preliminary
     db.flush()
     return db.query(IndicatorObservation).filter(IndicatorObservation.indicator_id == definition.id).order_by(IndicatorObservation.observation_date.desc()).first()
 
