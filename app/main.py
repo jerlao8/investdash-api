@@ -10,7 +10,7 @@ from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.deps import get_current_user, require_admin
-from app.api.routes import admin, auth, backtest, companies, favorites, feed, health, indicators, summary, system
+from app.api.routes import admin, auth, backtest, cfi, companies, favorites, feed, health, indicators, summary, system
 from app.config import get_settings
 from app.db import models  # noqa: F401 - ensures all models are registered on Base.metadata
 from app.db.migrate import ensure_column
@@ -49,6 +49,7 @@ app.include_router(indicators.router, prefix="/api", dependencies=[Depends(get_c
 app.include_router(favorites.router, prefix="/api", dependencies=[Depends(get_current_user)])
 app.include_router(feed.router, prefix="/api", dependencies=[Depends(get_current_user)])
 app.include_router(companies.router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(cfi.router, prefix="/api", dependencies=[Depends(get_current_user)])
 app.include_router(admin.router, prefix="/api", dependencies=[Depends(require_admin)])
 app.include_router(system.router, prefix="/api", dependencies=[Depends(get_current_user)])
 app.include_router(backtest.router, prefix="/api", dependencies=[Depends(get_current_user)])
@@ -72,6 +73,9 @@ _NEW_COLUMNS = [
     ("feed_items", "summary_zh", "TEXT DEFAULT ''"),
     ("crisis_events", "name_zh", "VARCHAR(120) DEFAULT ''"),
     ("crisis_events", "description_zh", "TEXT DEFAULT ''"),
+    ("companies", "lock_id", "VARCHAR(4)"),
+    ("companies", "cfi_tier", "INTEGER"),
+    ("companies", "cfi_role", "VARCHAR(120) DEFAULT ''"),
 ]
 
 

@@ -84,16 +84,82 @@ class SecConnector(BaseConnector):
             units = raw.payload["facts"]["us-gaap"][tag]["units"]
         except KeyError:
             return []
-        out: list[Observation] = []
-        for unit_key, entries in units.items():
+
+        # Cash-flow-statement concepts (capex, operating cash flow, ...) mix THREE duration
+        # conventions under the same tag within a single filing: a genuinely discrete quarter
+        # (~91 days), a year-to-date cumulative since the fiscal year start (~182/~273/~365
+        # days, sharing that start with the other quarters of the same fiscal year), and -
+        # confusingly - a trailing-twelve-month comparative (~365 days) whose start does NOT
+        # align with the fiscal year and which shares its start with no other entry. Treating
+        # every entry's "val" as its own discrete quarter mixes all three and produces
+        # nonsense magnitudes/deltas (e.g. a lone TTM entry read as "this quarter").
+        #
+        # Fix: dedupe re-filed (start,end) pairs keeping the latest filing, then group by
+        # "start". A genuine discrete quarter is a lone ~91-day entry - keep it as-is. A real
+        # fiscal-year cumulative ladder has 2+ entries sharing a start (Q1, Q1+Q2, Q1+Q2+Q3,
+        # FY) - diff consecutive ends to recover each discrete quarter. A lone entry that
+        # ISN'T ~91 days (a standalone TTM or odd stub period, since it has no siblings to
+        # diff against) is dropped rather than risk reporting a YTD/TTM total as one quarter.
+        by_key: dict[tuple[str, str], dict] = {}
+        for entries in units.values():
             for entry in entries:
                 if entry.get("form") not in ("10-Q", "10-K"):
                     continue
-                end = entry.get("end")
-                val = entry.get("val")
-                if end is None or val is None:
+                start, end, val = entry.get("start"), entry.get("end"), entry.get("val")
+                if start is None or end is None or val is None:
                     continue
-                out.append(
-                    Observation(observation_date=date.fromisoformat(end), value=float(val), source_url=raw.source_url)
-                )
+                key = (start, end)
+                existing = by_key.get(key)
+                if existing is None or entry.get("filed", "") >= existing.get("filed", ""):
+                    by_key[key] = entry
+
+        by_start: dict[str, list[dict]] = {}
+        for entry in by_key.values():
+            by_start.setdefault(entry["start"], []).append(entry)
+
+        def _duration(entry: dict) -> int:
+            return (date.fromisoformat(entry["end"]) - date.fromisoformat(entry["start"])).days
+
+        out: list[Observation] = []
+        for group in by_start.values():
+            group.sort(key=lambda e: e["end"])
+            # A trailing-twelve-month comparative fact spans exactly 4 quarters, so its start
+            # always lands exactly on some real quarter's discrete-start date - it collides
+            # with, and would otherwise corrupt, that quarter's group. A genuine fiscal-year
+            # ladder is the only case with a true ~182-day (H1) or ~273-day (9-month) member;
+            # a TTM collision never has one (just the real ~91-day quarter + the ~365-day TTM
+            # fact), so requiring that signature before trusting the group as a ladder is what
+            # tells the two apart.
+            has_ladder_signature = any(170 <= _duration(e) <= 190 or 260 <= _duration(e) <= 285 for e in group)
+            if len(group) == 1 or not has_ladder_signature:
+                for entry in group:
+                    if 80 <= _duration(entry) <= 100:
+                        out.append(
+                            Observation(
+                                observation_date=date.fromisoformat(entry["end"]), value=float(entry["val"]),
+                                source_url=raw.source_url,
+                            )
+                        )
+                continue
+            prior_val = None
+            for entry in group:
+                val = float(entry["val"])
+                if prior_val is not None:
+                    out.append(
+                        Observation(
+                            observation_date=date.fromisoformat(entry["end"]), value=val - prior_val,
+                            source_url=raw.source_url,
+                        )
+                    )
+                elif _duration(entry) <= 100:
+                    # First rung of the ladder doubles as the discrete Q1 only when it's
+                    # actually quarter-length; a longer first rung is a partial-year baseline
+                    # with nothing to diff against, so it's used only to seed later diffs.
+                    out.append(
+                        Observation(
+                            observation_date=date.fromisoformat(entry["end"]), value=val, source_url=raw.source_url
+                        )
+                    )
+                prior_val = val
+        out.sort(key=lambda o: o.observation_date)
         return out

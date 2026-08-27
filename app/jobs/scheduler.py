@@ -91,20 +91,48 @@ def last_pipeline_run_at(db: Session) -> datetime | None:
     return snap.created_at if snap else None
 
 
+def daily_observations_lag_today(db: Session) -> bool:
+    """True when no daily series has an observation dated America/Los_Angeles today.
+
+    Schedule-based catch-up can skip incorrectly if MarketSnapshot.created_at looks fresh
+    (e.g. backfill rows) while mock/live series never advanced to today_pt — common after
+    Render free-tier sleep. Observation lag is the ground truth that the dashboard is stale.
+    """
+    from sqlalchemy import func
+
+    from app.db.models import IndicatorDefinition, IndicatorObservation
+    from app.timeutil import today_pt
+
+    latest = (
+        db.query(func.max(IndicatorObservation.observation_date))
+        .join(IndicatorDefinition, IndicatorDefinition.id == IndicatorObservation.indicator_id)
+        .filter(
+            IndicatorDefinition.active == True,  # noqa: E712
+            IndicatorDefinition.frequency == "daily",
+        )
+        .scalar()
+    )
+    if latest is None:
+        return True
+    return latest < today_pt()
+
+
 def run_catchup_if_needed() -> dict | None:
-    """On process wake: run the pipeline only if a scheduled job was missed."""
+    """On process wake: run the pipeline if a cron slot was missed or daily data lags PT today."""
     db = SessionLocal()
     try:
         last_run = last_pipeline_run_at(db)
         needed, job_name, fire_at = should_run_catchup(last_run)
+        if not needed and daily_observations_lag_today(db):
+            needed, job_name, fire_at = True, "stale_daily_observations", None
         if not needed:
             logger.info(
-                "wake catch-up skipped (last_run=%s, no missed schedule)",
+                "wake catch-up skipped (last_run=%s, no missed schedule, daily obs current)",
                 last_run,
             )
             return None
         logger.info(
-            "wake catch-up running missed job %s (due=%s, last_run=%s)",
+            "wake catch-up running %s (due=%s, last_run=%s)",
             job_name,
             fire_at,
             last_run,

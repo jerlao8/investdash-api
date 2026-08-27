@@ -18,6 +18,12 @@ class Company(Base):
     tier: Mapped[str] = mapped_column(String(60))  # compute_semis|networking_infra|hyperscalers|higher_risk_infra
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Capex Freeze Monitor fields - additive and independent of the AI Company Monitor fields
+    # above. lock_id is null for companies seeded only for the AI Company Monitor.
+    lock_id: Mapped[str | None] = mapped_column(String(4), nullable=True, index=True)  # L1..L6
+    cfi_tier: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1|2|3, drives weight
+    cfi_role: Mapped[str] = mapped_column(String(120), default="")
+
 
 class CompanyMetric(Base):
     __tablename__ = "company_metrics"

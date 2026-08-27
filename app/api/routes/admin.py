@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.models import InviteCode, LoginEvent, User
 from app.db.session import get_db
+from app.jobs.cfi_pipeline import run_cfi_pipeline
 from app.jobs.pipeline import run_full_pipeline
 from app.schemas.auth import CreateInviteCodeRequest, InviteCodeOut, LoginEventOut, UpdatePasswordRequest, UpdateUserRequest, UserOut
 from app.security import hash_password
@@ -18,6 +19,11 @@ router = APIRouter()
 @router.post("/admin/recalculate")
 def recalculate(db: Session = Depends(get_db)) -> dict:
     return run_full_pipeline(db)
+
+
+@router.post("/admin/cfi/recalculate")
+def cfi_recalculate(db: Session = Depends(get_db)) -> dict:
+    return run_cfi_pipeline(db)
 
 
 def _user_out(user: User) -> UserOut:

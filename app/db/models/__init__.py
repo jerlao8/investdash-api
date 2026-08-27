@@ -1,4 +1,5 @@
 from app.db.models.alerts import AlertEvent, FeedItem
+from app.db.models.cfi import CfiSnapshot
 from app.db.models.companies import Company, CompanyFundingScore, CompanyMetric
 from app.db.models.events import CrisisEvent
 from app.db.models.favorites import FavoriteIndicator
@@ -23,4 +24,5 @@ __all__ = [
     "InviteCode",
     "LoginEvent",
     "FavoriteIndicator",
+    "CfiSnapshot",
 ]

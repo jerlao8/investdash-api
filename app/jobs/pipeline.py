@@ -45,7 +45,15 @@ from app.seed.sources import SOURCES
 from app.timeutil import today_pt
 
 # Section 39 freshness model (converted to days; "daily stale after 36h" ~= 1.5 days).
-FRESHNESS_DAYS = {"daily": 1.5, "weekly": 10, "monthly": 45, "quarterly": 120, "annual": 500}
+# "monthly" is 92, not a tighter ~45: FRED dates monthly series by the *start* of their
+# reference month, and BLS/Census/BEA releases land 5-9 weeks after that - so on-time data
+# normally sits 35-90+ days past its own reference date right up until the next release.
+# Confirmed against FRED directly: every standard monthly release (CPI, unemployment,
+# payrolls, ISM, retail sales, housing starts, wages, ...) was sitting at ~55 days with a
+# recent last_updated (genuinely current, not stale); PCE specifically runs the longest of
+# the group, released at each month's end (~90 days after its own reference date at the
+# worst point in its cycle) rather than mid-month like the others.
+FRESHNESS_DAYS = {"daily": 1.5, "weekly": 10, "monthly": 92, "quarterly": 120, "annual": 500}
 
 
 def _business_day_gap(last_obs: date, today: date) -> float:
@@ -100,6 +108,7 @@ def _sync_indicator_definitions(db: Session, source_id_by_key: dict[str, int]) -
         row.is_critical = meta["is_critical"]
         row.green_threshold = meta["green_threshold"]
         row.yellow_threshold = meta["yellow_threshold"]
+        row.active = meta["active"]
         zh = INDICATOR_TRANSLATIONS.get(meta["slug"], {})
         row.name_zh = zh.get("name", "")
         row.info_text_zh = zh.get("info", "")

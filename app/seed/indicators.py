@@ -45,6 +45,7 @@ def I(
     source_url: str = "",
     green: float = 70.0,
     yellow: float = 40.0,
+    active: bool = True,
 ) -> dict[str, Any]:
     return dict(
         slug=slug,
@@ -67,6 +68,7 @@ def I(
         source_url=source_url,
         green_threshold=green,
         yellow_threshold=yellow,
+        active=active,
     )
 
 
@@ -241,10 +243,15 @@ INDICATORS: list[dict[str, Any]] = [
       lead_lag="leading", crisis="high", critical=True, base=2.0, vol=0.4, floor=-8.0, ceiling=8.0, source_name="New York Fed",
       info="New York Fed's independent GDP nowcast model, a useful cross-check against GDPNow.",
       guide="Rising is favorable - same read as GDPNow from an independent model; use divergence between the two as a confidence check. Falling is unfavorable - a weakening growth nowcast."),
+    # USSLIND (St. Louis Fed's Leading Index, not actually the Conference Board's own LEI -
+    # that's proprietary and unavailable via FRED) was discontinued by FRED itself in 2020
+    # (observation_end 2020-02-01, last_updated 2020-04-14, confirmed against the live FRED
+    # API) - deactivated rather than left showing years-stale data with no way to refresh it.
     I("lei", "Conference Board LEI", "macro_growth", "growth", "growth", "fred", "USSLIND", "monthly", "index", "higher_is_healthy",
       lead_lag="leading", crisis="high", critical=True, base=100.0, vol=0.6, floor=85.0, ceiling=115.0,
       info="Composite Leading Economic Index. A sustained multi-month decline has historically preceded most post-war recessions.",
-      guide="Rising is favorable - a strengthening leading index supports the growth outlook. Falling, especially a sustained multi-month decline, is unfavorable - it has preceded most post-war recessions."),
+      guide="Rising is favorable - a strengthening leading index supports the growth outlook. Falling, especially a sustained multi-month decline, is unfavorable - it has preceded most post-war recessions.",
+      active=False),
     I("ism-mfg-pmi", "ISM Manufacturing PMI", "macro_growth", "growth", "growth", "fred", "MANEMP", "monthly", "index", "higher_is_healthy",
       lead_lag="leading", crisis="high", critical=True, base=50.0, vol=1.8, floor=35.0, ceiling=65.0,
       info="ISM Manufacturing survey. Above 50 = expansion, below 50 = contraction. One of the most timely growth signals available.",
