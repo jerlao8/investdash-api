@@ -1,12 +1,69 @@
 """Unit tests for wake-up catch-up schedule detection."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from app.jobs.scheduler import most_recent_due_job, should_run_catchup
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.db.models import CfiSnapshot, Company
+from app.db.session import Base
+from app.jobs.scheduler import _cfi_catchup_needed, _company_roster_incomplete, most_recent_due_job, should_run_catchup
+from app.seed.companies import COMPANIES
+from app.timeutil import today_pt
 
 PT = ZoneInfo("America/Los_Angeles")
+
+
+def _make_session():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine, tables=[Company.__table__, CfiSnapshot.__table__])
+    return sessionmaker(bind=engine)()
+
+
+def test_company_roster_incomplete_when_a_seeded_ticker_is_missing():
+    db = _make_session()
+    # Seed every ticker except one, mirroring a deploy that just added a new company.
+    for c in COMPANIES[:-1]:
+        db.add(Company(name=c["name"], ticker=c["ticker"], sector=c["sector"], subsector=c["subsector"], tier=c["tier"], active=True))
+    db.commit()
+    assert _company_roster_incomplete(db) is True
+
+
+def test_company_roster_complete_when_every_seeded_ticker_present():
+    db = _make_session()
+    for c in COMPANIES:
+        db.add(Company(name=c["name"], ticker=c["ticker"], sector=c["sector"], subsector=c["subsector"], tier=c["tier"], active=True))
+    db.commit()
+    assert _company_roster_incomplete(db) is False
+
+
+def test_cfi_catchup_needed_when_no_snapshot_ever_ran():
+    db = _make_session()
+    assert _cfi_catchup_needed(db) is True
+
+
+def test_cfi_catchup_needed_when_latest_snapshot_is_from_a_prior_day():
+    db = _make_session()
+    db.add(CfiSnapshot(
+        snapshot_date=today_pt() - timedelta(days=1), cfi=10.0, state="expansion",
+        lock_health_json="{}", lock_damage_json="{}", lock_legitimacy_json="{}",
+        lock_breadth_json="{}", lock_coverage_json="{}",
+    ))
+    db.commit()
+    assert _cfi_catchup_needed(db) is True
+
+
+def test_cfi_catchup_not_needed_when_todays_snapshot_already_exists():
+    db = _make_session()
+    db.add(CfiSnapshot(
+        snapshot_date=today_pt(), cfi=10.0, state="expansion",
+        lock_health_json="{}", lock_damage_json="{}", lock_legitimacy_json="{}",
+        lock_breadth_json="{}", lock_coverage_json="{}",
+    ))
+    db.commit()
+    assert _cfi_catchup_needed(db) is False
 
 
 def test_most_recent_due_after_morning_job():

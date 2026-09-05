@@ -118,29 +118,68 @@ def daily_observations_lag_today(db: Session) -> bool:
     return latest < today_pt()
 
 
+def _company_roster_incomplete(db: Session) -> bool:
+    """True when the seed list (app/seed/companies.py) has a ticker not yet in the companies
+    table - e.g. right after a deploy that added new companies. Without this, seed_and_sync's
+    upsert only runs when the main indicator pipeline's OWN freshness check decides a run is
+    needed, so a newly-added company can sit missing from the API for hours after its fix
+    ships, just because daily macro observations already looked current."""
+    from app.db.models import Company
+    from app.seed.companies import COMPANIES
+
+    existing = {c.ticker for c in db.query(Company.ticker).all()}
+    return any(c["ticker"] not in existing for c in COMPANIES)
+
+
+def _cfi_catchup_needed(db: Session) -> bool:
+    """True when the Capex Freeze Monitor has no snapshot for today yet - checked
+    independently of whatever the main indicator pipeline decides. The two pipelines track
+    unrelated freshness concepts (daily macro observations vs. quarterly company financials),
+    so gating CFI entirely behind the main pipeline's own "needed" decision meant CFI could
+    stay stale (or, before it was wired in at all, never run) even on a run where the main
+    dashboard already looked current and wake catch-up correctly skipped it."""
+    from app.db.models import CfiSnapshot
+    from app.timeutil import today_pt
+
+    latest = db.query(CfiSnapshot).order_by(CfiSnapshot.snapshot_date.desc()).first()
+    return latest is None or latest.snapshot_date < today_pt()
+
+
 def run_catchup_if_needed() -> dict | None:
-    """On process wake: run the pipeline if a cron slot was missed or daily data lags PT today."""
+    """On process wake: run the pipeline if a cron slot was missed, daily data lags PT today,
+    the company roster is missing a seeded ticker, or the Capex Freeze Monitor hasn't produced
+    today's snapshot - each checked independently so one sub-system looking fresh can't mask
+    another one being stale or never-yet-run."""
     db = SessionLocal()
     try:
         last_run = last_pipeline_run_at(db)
         needed, job_name, fire_at = should_run_catchup(last_run)
         if not needed and daily_observations_lag_today(db):
             needed, job_name, fire_at = True, "stale_daily_observations", None
-        if not needed:
+        if not needed and _company_roster_incomplete(db):
+            needed, job_name, fire_at = True, "company_roster_incomplete", None
+
+        cfi_needed = _cfi_catchup_needed(db)
+
+        if not needed and not cfi_needed:
             logger.info(
                 "wake catch-up skipped (last_run=%s, no missed schedule, daily obs current)",
                 last_run,
             )
             return None
-        logger.info(
-            "wake catch-up running %s (due=%s, last_run=%s)",
-            job_name,
-            fire_at,
-            last_run,
-        )
-        result = run_full_pipeline(db)
-        logger.info("wake catch-up completed: %s", result)
-        _run_cfi_pipeline_safely(db)
+
+        result = None
+        if needed:
+            logger.info(
+                "wake catch-up running %s (due=%s, last_run=%s)",
+                job_name,
+                fire_at,
+                last_run,
+            )
+            result = run_full_pipeline(db)
+            logger.info("wake catch-up completed: %s", result)
+        if cfi_needed:
+            _run_cfi_pipeline_safely(db)
         return result
     except Exception:  # noqa: BLE001
         logger.exception("wake catch-up failed")
