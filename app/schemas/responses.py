@@ -111,6 +111,7 @@ class CompanyOut(BaseModel):
     maturity_score: float | None = None
     funding_gap: float | None = None
     funding_gap_score: float | None = None
+    debt_service_score: float | None = None
 
 
 class CompanyDetail(CompanyOut):

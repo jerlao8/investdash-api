@@ -56,4 +56,5 @@ class CompanyFundingScore(Base):
     maturity_score: Mapped[float] = mapped_column(Float)
     funding_gap: Mapped[float] = mapped_column(Float)
     funding_gap_score: Mapped[float] = mapped_column(Float, default=5.0)
+    debt_service_score: Mapped[float] = mapped_column(Float, default=5.0)
     overall_score: Mapped[float] = mapped_column(Float)

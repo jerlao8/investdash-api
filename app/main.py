@@ -76,6 +76,7 @@ _NEW_COLUMNS = [
     ("companies", "lock_id", "VARCHAR(4)"),
     ("companies", "cfi_tier", "INTEGER"),
     ("companies", "cfi_role", "VARCHAR(120) DEFAULT ''"),
+    ("company_funding_scores", "debt_service_score", "FLOAT DEFAULT 5.0"),
 ]
 
 

@@ -35,6 +35,7 @@ def list_companies(db: Session = Depends(get_db), tier: str | None = None) -> li
                 debt_score=fs.debt_score if fs else None, fcf_score=fs.fcf_score if fs else None,
                 capex_score=fs.capex_score if fs else None, maturity_score=fs.maturity_score if fs else None,
                 funding_gap=fs.funding_gap if fs else None, funding_gap_score=fs.funding_gap_score if fs else None,
+                debt_service_score=fs.debt_service_score if fs else None,
             )
         )
     return out
@@ -62,5 +63,6 @@ def get_company(ticker: str, db: Session = Depends(get_db)) -> CompanyDetail:
         debt_score=fs.debt_score if fs else None, fcf_score=fs.fcf_score if fs else None,
         capex_score=fs.capex_score if fs else None, maturity_score=fs.maturity_score if fs else None,
         funding_gap=fs.funding_gap if fs else None, funding_gap_score=fs.funding_gap_score if fs else None,
+        debt_service_score=fs.debt_service_score if fs else None,
         metrics=metrics,
     )

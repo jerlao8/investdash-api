@@ -51,3 +51,25 @@ def test_large_funding_gap_pulls_overall_score_down():
     # The critical assertion: a real forward funding need must show up in the OVERALL score,
     # not just sit unused in the funding_gap field alongside an unmoved overall_score.
     assert huge_score.overall_score < modest_score.overall_score
+
+
+def test_maturity_wall_still_hurts_when_interest_coverage_alone_looks_fine():
+    db = _make_session()
+    # Same EBITDA/interest (comfortable interest coverage on its own), but one company also has
+    # a large principal repayment due in the next 12 months - the combined interest+principal
+    # burden a creditor actually cares about, which interest coverage alone can't see.
+    light_maturity = _seed_company(db, "LIGHT", {"debt_maturities_next_12m": 500})
+    heavy_maturity = _seed_company(db, "HEAVY", {"debt_maturities_next_12m": 40000})
+
+    compute_company_funding_scores(db)
+    db.commit()
+
+    light_score = db.query(CompanyFundingScore).filter(CompanyFundingScore.company_id == light_maturity.id).first()
+    heavy_score = db.query(CompanyFundingScore).filter(CompanyFundingScore.company_id == heavy_maturity.id).first()
+
+    # Interest coverage (debt_score) is identical - both share the same EBITDA/interest inputs.
+    assert light_score.debt_score == heavy_score.debt_score
+    # But debt-service coverage, which folds in the maturity wall, must diverge and pull the
+    # overall score down for the company facing the big near-term principal repayment.
+    assert heavy_score.debt_service_score < light_score.debt_service_score
+    assert heavy_score.overall_score < light_score.overall_score

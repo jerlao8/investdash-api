@@ -133,9 +133,11 @@ def seed_and_sync(db: Session) -> None:
 
     _sync_indicator_definitions(db, source_id_by_key)
 
-    if db.query(Company).count() == 0:
+    existing_tickers = {c.ticker for c in db.query(Company).all()}
+    new_companies = [c for c in COMPANIES if c["ticker"] not in existing_tickers]
+    if new_companies:
         period_end = today_pt().replace(day=1) - timedelta(days=1)  # end of last month, proxy quarter-end
-        for c in COMPANIES:
+        for c in new_companies:
             company = Company(name=c["name"], ticker=c["ticker"], cik=c["cik"], sector=c["sector"], subsector=c["subsector"], tier=c["tier"], active=True)
             db.add(company)
             db.flush()
@@ -311,9 +313,9 @@ def _score_ratio(value: float, low: float, high: float) -> float:
 
 
 def compute_company_funding_scores(db: Session) -> None:
-    """Section 26 formulas: liquidity runway, debt-service coverage, capex coverage,
-    maturity coverage, and expansion funding gap - converted into 0-10 sub-scores and an
-    equal-weighted overall across all six."""
+    """Section 26 formulas: liquidity runway, interest coverage, capex coverage,
+    maturity coverage, debt-service coverage, and expansion funding gap - converted into 0-10
+    sub-scores and an equal-weighted overall across all seven."""
     companies = db.query(Company).filter(Company.active == True).all()  # noqa: E712
     today = today_pt()
     db.query(CompanyFundingScore).filter(CompanyFundingScore.date == today).delete()
@@ -362,6 +364,15 @@ def compute_company_funding_scores(db: Session) -> None:
         maturity_24m_coverage = liquidity / mat24 if mat24 > 0 else 999.0
         maturity_score = _score_ratio(maturity_24m_coverage, 0, 3) if mat24 > 0 else 10.0
 
+        # debt_score (interest coverage) and maturity_score (principal due vs. liquidity) are
+        # scored independently, so a company can clear both while the COMBINED near-term
+        # obligation - interest plus the principal actually coming due in the next 12 months -
+        # is what a creditor or a margin desk actually looks at. A true debt-service coverage
+        # ratio catches the case where ballooning interest AND a maturity wall land in the same
+        # window even though each one alone still looks fine.
+        debt_service_coverage = ebitda / (interest + mat12)
+        debt_service_score = _score_ratio(debt_service_coverage, 0, 8)
+
         # The other five components are backward/short-term (current cash vs. current debt,
         # current EBITDA vs. current interest) - they can all look fine even when a company has
         # a large FORWARD funding need, since committed capex over the next 24 months isn't
@@ -373,14 +384,15 @@ def compute_company_funding_scores(db: Session) -> None:
         funding_gap_score = _score_ratio(-gap_ratio, -0.15, 0.20)
 
         overall = round(
-            (liquidity_score + debt_score + fcf_score + capex_score + maturity_score + funding_gap_score) / 6, 2
+            (liquidity_score + debt_score + fcf_score + capex_score + maturity_score
+             + funding_gap_score + debt_service_score) / 7, 2
         )
 
         db.add(
             CompanyFundingScore(
                 company_id=c.id, date=today, liquidity_score=liquidity_score, debt_score=debt_score,
                 fcf_score=fcf_score, capex_score=capex_score, maturity_score=maturity_score,
-                funding_gap_score=funding_gap_score,
+                funding_gap_score=funding_gap_score, debt_service_score=debt_service_score,
                 funding_gap=round(expansion_funding_gap, 1), overall_score=overall,
             )
         )

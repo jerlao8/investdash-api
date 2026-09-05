@@ -41,6 +41,21 @@ COMPANIES: list[dict[str, Any]] = [
     dict(name="Micron", ticker="MU", cik=None, sector="Semiconductors", subsector="Memory", tier="compute_semis",
          cash=9500, sti=2000, debt=13500, st_debt=500, interest=450, ocf=8000, capex=8500, revenue=28000, ebitda=10000,
          mat12=500, mat24=1500, capex24=17000, revolver=2500),
+    dict(name="SanDisk", ticker="SNDK", cik="0002023554", sector="Semiconductors", subsector="Memory", tier="compute_semis",
+         cash=1500, sti=0, debt=1900, st_debt=0, interest=140, ocf=1000, capex=1300, revenue=7400, ebitda=1700,
+         mat12=0, mat24=300, capex24=2800, revolver=1500),
+    dict(name="Western Digital", ticker="WDC", cik="0000106040", sector="Semiconductors", subsector="Memory", tier="compute_semis",
+         cash=1900, sti=0, debt=7300, st_debt=300, interest=380, ocf=1600, capex=450, revenue=9500, ebitda=2600,
+         mat12=300, mat24=900, capex24=1000, revolver=1000),
+    # SK Hynix and Kioxia have no SEC CIK (Korea/Japan primary listings; SK Hynix's HXSCF is an
+    # unsponsored OTC ADR) - figures below are converted from KRW/JPY filings at approximate FX
+    # (~1350 KRW/USD, ~150 JPY/USD) rather than pulled via the XBRL connector like the US filers.
+    dict(name="SK Hynix", ticker="HXSCF", cik=None, sector="Semiconductors", subsector="Memory", tier="compute_semis",
+         cash=20500, sti=0, debt=17700, st_debt=2000, interest=450, ocf=32000, capex=22000, revenue=72000, ebitda=40000,
+         mat12=1500, mat24=3500, capex24=45000, revolver=3000),
+    dict(name="Kioxia Holdings", ticker="285A", cik=None, sector="Semiconductors", subsector="Memory", tier="compute_semis",
+         cash=2500, sti=0, debt=6500, st_debt=500, interest=180, ocf=2800, capex=2200, revenue=15600, ebitda=4800,
+         mat12=400, mat24=900, capex24=5500, revolver=1000),
     dict(name="Marvell", ticker="MRVL", cik=None, sector="Semiconductors", subsector="Custom Silicon/Networking", tier="compute_semis",
          cash=800, sti=100, debt=4200, st_debt=0, interest=140, ocf=900, capex=140, revenue=5500, ebitda=1500,
          mat12=0, mat24=600, capex24=350, revolver=1500),

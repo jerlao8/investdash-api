@@ -152,9 +152,18 @@ def _health_from_z(z: float) -> float:
 
 
 def _quarterly_series(db: Session, company_id: int, metric_name: str) -> list[tuple[date, float]]:
+    # extraction_method="xbrl" only: the AI Company Monitor seeds its own "capex"/
+    # "operating_cash_flow" mock rows (extraction_method="mock", USD_millions) for these same
+    # hyperscaler companies with a period_end of "end of last month" - always more recent than
+    # a real filed quarter. Without this filter that synthetic row wins the "latest quarter"
+    # comparison against a real prior quarter in raw USD, producing a bogus ~-100% QoQ swing
+    # (millions vs. raw dollars) on every company, every run.
     rows = (
         db.query(CompanyMetric.period_end, CompanyMetric.value)
-        .filter(CompanyMetric.company_id == company_id, CompanyMetric.metric_name == metric_name)
+        .filter(
+            CompanyMetric.company_id == company_id, CompanyMetric.metric_name == metric_name,
+            CompanyMetric.extraction_method == "xbrl",
+        )
         .order_by(CompanyMetric.period_end.asc())
         .all()
     )

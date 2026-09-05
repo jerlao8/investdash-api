@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import MarketSnapshot
 from app.db.session import SessionLocal
+from app.jobs.cfi_pipeline import run_cfi_pipeline
 from app.jobs.pipeline import run_full_pipeline
 
 logger = logging.getLogger("investdash.scheduler")
@@ -139,6 +140,7 @@ def run_catchup_if_needed() -> dict | None:
         )
         result = run_full_pipeline(db)
         logger.info("wake catch-up completed: %s", result)
+        _run_cfi_pipeline_safely(db)
         return result
     except Exception:  # noqa: BLE001
         logger.exception("wake catch-up failed")
@@ -148,11 +150,26 @@ def run_catchup_if_needed() -> dict | None:
         db.close()
 
 
+def _run_cfi_pipeline_safely(db: Session) -> None:
+    """The Capex Freeze Monitor has no scheduling of its own (its pipeline previously only
+    ran from a manual, unwired admin endpoint - the companies/L6-financials tables never
+    synced in production, so /api/cfi/overview stayed permanently empty). Piggyback it on
+    the same cadence as the main pipeline; isolated try/except so an SEC EDGAR hiccup here
+    (ingest_l6_financials has no mock fallback) can't take down the main dashboard's run."""
+    try:
+        cfi_result = run_cfi_pipeline(db)
+        logger.info("cfi pipeline completed: %s", cfi_result)
+    except Exception:  # noqa: BLE001
+        logger.exception("cfi pipeline failed")
+        db.rollback()
+
+
 def _run_pipeline_job(job_name: str) -> None:
     db = SessionLocal()
     try:
         result = run_full_pipeline(db)
         logger.info("scheduled job %s completed: %s", job_name, result)
+        _run_cfi_pipeline_safely(db)
     except Exception:  # noqa: BLE001
         logger.exception("scheduled job %s failed", job_name)
         db.rollback()
