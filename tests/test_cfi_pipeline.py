@@ -1,11 +1,13 @@
 from datetime import date
+from unittest.mock import patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.connectors.base import RawObservation
 from app.db.models import Company, CompanyMetric
 from app.db.session import Base
-from app.jobs.cfi_pipeline import compute_l6_company_health
+from app.jobs.cfi_pipeline import CAPEX_TAGS, OCF_TAGS, _fetch_xbrl_metric, compute_l6_company_health
 
 
 def _make_session():
@@ -59,3 +61,38 @@ def test_l6_health_ignores_ai_company_monitor_mock_rows_sharing_the_same_metric_
     assert result is not None
     assert result["capex_latest"] == 35802000000.0
     assert result["capex_qoq_growth_pct"] > -50.0  # real QoQ growth, not the ~-100% mock-collision artifact
+
+
+class _FakeConnector:
+    """Records every .fetch() call - stands in for SecConnector to prove
+    _fetch_xbrl_metric fetches a company's multi-MB company-facts document at most once per
+    ingest_l6_financials() run, not once per candidate tag."""
+
+    def __init__(self):
+        self.fetch_calls: list[str] = []
+
+    def fetch(self, series_identifier: str):
+        self.fetch_calls.append(series_identifier)
+        return RawObservation(series_identifier=series_identifier, payload={"facts": {"us-gaap": {}}}, source_url="")
+
+    def normalize(self, raw):
+        return []
+
+
+def test_fetch_xbrl_metric_fetches_company_facts_at_most_once_per_run():
+    """A mega-cap's company-facts JSON is ~4-5MB; the old code re-fetched and re-parsed it
+    once per candidate tag (capex has 2, ocf has 2 - up to 4x per company), which is what
+    drove a full CFI run to exhaust the free-tier instance's memory/CPU and hang. One live
+    fetch per company, cached across every tag lookup in the same run."""
+    db = _make_session()
+    company = Company(name="Microsoft", ticker="MSFT", cik="0000789019", sector="Hyperscaler", subsector="Cloud", tier="hyperscalers", lock_id="L6", active=True)
+    db.add(company)
+    db.flush()
+
+    fake = _FakeConnector()
+    facts_cache: dict[str, dict] = {}
+    with patch("app.jobs.cfi_pipeline.get_connector", return_value=fake):
+        _fetch_xbrl_metric(db, company, CAPEX_TAGS, "capex", facts_cache)
+        _fetch_xbrl_metric(db, company, OCF_TAGS, "operating_cash_flow", facts_cache)
+
+    assert len(fake.fetch_calls) == 1

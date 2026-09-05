@@ -21,6 +21,7 @@ coverage-requirement principle (§6.1): never impute, surface staleness instead.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from datetime import date, datetime, timedelta
 
@@ -28,9 +29,12 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.connectors import get_connector
+from app.connectors.base import RawObservation
 from app.db.models import CfiSnapshot, Company, CompanyMetric, IndicatorDefinition, IndicatorObservation
 from app.jobs.pipeline import _pipeline_lock
 from app.seed.cfi_companies import CFI_COMPANIES
+
+logger = logging.getLogger("investdash.cfi_pipeline")
 
 LOCK_IDS = ["L1", "L2", "L3", "L4", "L5", "L6"]
 LOCK_NAMES = {
@@ -74,7 +78,9 @@ def sync_cfi_companies(db: Session) -> None:
     db.commit()
 
 
-def _fetch_xbrl_metric(db: Session, company: Company, tags: list[str], metric_name: str) -> bool:
+def _fetch_xbrl_metric(
+    db: Session, company: Company, tags: list[str], metric_name: str, facts_cache: dict[str, dict]
+) -> bool:
     """Try every candidate tag and merge what each returns; upsert into CompanyMetric by
     (company_id, metric_name, period_end) so re-running the pipeline doesn't duplicate rows.
 
@@ -82,13 +88,28 @@ def _fetch_xbrl_metric(db: Session, company: Company, tags: list[str], metric_na
     their history (e.g. Amazon reported capex under PaymentsToAcquirePropertyPlantAndEquipment
     only through ~2017, then PaymentsToAcquireProductiveAssets since) - stopping at the first
     tag with ANY data silently freezes coverage at whatever the earliest, most-discontinued
-    tag last reported, so every tag is tried and their periods merged."""
+    tag last reported, so every tag is tried and their periods merged.
+
+    facts_cache holds the full company-facts document per CIK for the life of one
+    ingest_l6_financials() run. A mega-cap's company-facts JSON is itself ~4-5MB covering
+    every tag it has ever filed - fetching and re-parsing that same multi-MB document live
+    once per candidate tag (capex has 2, ocf has 2 - up to 4x per company) is exactly what
+    drove the free-tier instance to unresponsiveness on a full CFI run. One live fetch per
+    company, cached, then sliced locally per tag."""
     if not company.cik:
         return False
     connector = get_connector("sec")
+    if company.cik not in facts_cache:
+        facts_cache[company.cik] = connector.fetch(f"{company.cik}:{tags[0]}").payload
+        if not facts_cache[company.cik] and connector._last_error:  # noqa: SLF001
+            logger.warning("SEC fetch failed for %s (%s): %s", company.ticker, company.cik, connector._last_error)
+    payload = facts_cache[company.cik]
     got_any = False
     for tag in tags:
-        raw = connector.fetch(f"{company.cik}:{tag}")
+        raw = RawObservation(
+            series_identifier=f"{company.cik}:{tag}", payload=payload,
+            source_url=f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={company.cik}",
+        )
         observations = connector.normalize(raw)
         if not observations:
             continue
@@ -123,10 +144,11 @@ def ingest_l6_financials(db: Session) -> dict[str, int]:
     tags don't match simply stays uncovered rather than getting a fabricated number."""
     companies = db.query(Company).filter(Company.lock_id.isnot(None), Company.cik.isnot(None)).all()
     counts = {"capex": 0, "operating_cash_flow": 0}
+    facts_cache: dict[str, dict] = {}
     for c in companies:
-        if _fetch_xbrl_metric(db, c, CAPEX_TAGS, "capex"):
+        if _fetch_xbrl_metric(db, c, CAPEX_TAGS, "capex", facts_cache):
             counts["capex"] += 1
-        if _fetch_xbrl_metric(db, c, OCF_TAGS, "operating_cash_flow"):
+        if _fetch_xbrl_metric(db, c, OCF_TAGS, "operating_cash_flow", facts_cache):
             counts["operating_cash_flow"] += 1
     return counts
 
