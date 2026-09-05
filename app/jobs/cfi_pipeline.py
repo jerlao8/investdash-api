@@ -274,6 +274,11 @@ def compute_lock_summaries(db: Session) -> dict[str, dict]:
             "lock_id": lock_id, "name": LOCK_NAMES[lock_id], "weight": LOCK_WEIGHTS[lock_id],
             "company_count": len(companies), "coverage": 0.0, "health": None, "damage": None,
             "breadth": None, "companies": [],
+            # Which companies company_count refers to, independent of whether this lock has a
+            # per-company score - L1/L2/L3/L4/L5 have zero or one shared macro-level number for
+            # the whole lock, not an individual score per company, but that's no reason to hide
+            # who's actually being tracked.
+            "tracked_companies": [{"ticker": c.ticker, "name": c.name, "cfi_role": c.cfi_role} for c in companies],
         }
 
     l6_companies = db.query(Company).filter(Company.lock_id == "L6").all()

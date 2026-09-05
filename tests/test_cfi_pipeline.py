@@ -5,14 +5,23 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.connectors.base import RawObservation
-from app.db.models import Company, CompanyMetric
+from app.db.models import Company, CompanyMetric, IndicatorDefinition, IndicatorObservation
 from app.db.session import Base
-from app.jobs.cfi_pipeline import CAPEX_TAGS, OCF_TAGS, _fetch_xbrl_metric, compute_l6_company_health
+from app.jobs.cfi_pipeline import CAPEX_TAGS, OCF_TAGS, _fetch_xbrl_metric, compute_l6_company_health, compute_lock_summaries
 
 
 def _make_session():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(bind=engine, tables=[Company.__table__, CompanyMetric.__table__])
+    return sessionmaker(bind=engine)()
+
+
+def _make_full_session():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(
+        bind=engine,
+        tables=[Company.__table__, CompanyMetric.__table__, IndicatorDefinition.__table__, IndicatorObservation.__table__],
+    )
     return sessionmaker(bind=engine)()
 
 
@@ -96,3 +105,22 @@ def test_fetch_xbrl_metric_fetches_company_facts_at_most_once_per_run():
         _fetch_xbrl_metric(db, company, OCF_TAGS, "operating_cash_flow", facts_cache)
 
     assert len(fake.fetch_calls) == 1
+
+
+def test_lock_summaries_list_tracked_companies_even_without_a_per_company_score():
+    """L3's health is one macro-level credit-spread proxy shared across every company tagged
+    to it, not an individual score per company - but the UI still needs to answer "which 9
+    companies" for a lock whose company_count is 9. tracked_companies must be populated for
+    every lock, independent of whether that lock has any per-company score computed."""
+    db = _make_full_session()
+    db.add(Company(name="Blackstone", ticker="BX", sector="Financials", subsector="Private Credit", tier="cfi_only", lock_id="L3", cfi_role="Private Credit", active=True))
+    db.add(Company(name="Moody's", ticker="MCO", sector="Financials", subsector="Rating Agency", tier="cfi_only", lock_id="L3", cfi_role="Rating Agency", active=True))
+    db.commit()
+
+    summaries = compute_lock_summaries(db)
+
+    assert summaries["L3"]["health"] is None  # no hy-oas/ig-oas indicator data seeded - no score
+    assert summaries["L3"]["company_count"] == 2
+    tickers = {c["ticker"] for c in summaries["L3"]["tracked_companies"]}
+    assert tickers == {"BX", "MCO"}
+    assert all(c["cfi_role"] for c in summaries["L3"]["tracked_companies"])

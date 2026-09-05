@@ -13,6 +13,17 @@ class CfiCompanyOut(BaseModel):
     as_of: str
 
 
+class CfiTrackedCompanyOut(BaseModel):
+    """Which companies a lock's company_count refers to - populated for every lock,
+    independent of whether that lock has a per-company score (only L6 does; L3's health is
+    one macro-level credit-spread proxy shared across all of its tracked companies, not an
+    individual score per company)."""
+
+    ticker: str
+    name: str
+    cfi_role: str
+
+
 class CfiLockOut(BaseModel):
     lock_id: str
     name: str
@@ -25,6 +36,7 @@ class CfiLockOut(BaseModel):
     legitimacy: float | None = None
     idiosyncratic: bool | None = None
     companies: list[CfiCompanyOut] = []
+    tracked_companies: list[CfiTrackedCompanyOut] = []
 
 
 class CfiOverviewOut(BaseModel):
